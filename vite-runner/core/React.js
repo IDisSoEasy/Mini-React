@@ -25,8 +25,11 @@ function render(el, container) {
       children: [el]
     }
   }
+
+  root = nextWorkOfUnit;
 }
 
+let root = null;
 let nextWorkOfUnit = null;
 function workLoop(deadline) {
   let shouldYield = false;
@@ -35,7 +38,24 @@ function workLoop(deadline) {
     shouldYield = deadline.timeRemaining() < 1;
   }
 
+  if (!nextWorkOfUnit && root) {
+    commitRoot();
+  }
+
   requestIdleCallback(workLoop);
+}
+
+function commitRoot() {
+  commitWork(root.child);
+}
+
+function commitWork(fiber) {
+  if (!fiber) {
+    return;
+  }
+  fiber.parent.dom.appendChild(fiber.dom);
+  commitWork(fiber.child);
+  commitWork(fiber.sibling);
 }
 
 requestIdleCallback(workLoop);
@@ -76,7 +96,6 @@ function performUnitOfWork(fiber) {
   // 1. createDom
   if (!fiber.dom) {
     const dom = (fiber.dom = createDom(fiber.type));
-    fiber.parent.dom.appendChild(dom);
     // 2. 处理 props
     updateProps(dom, fiber.props);
   }
