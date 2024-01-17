@@ -41,7 +41,7 @@ function workLoop(deadline) {
   if (!nextWorkOfUnit && root) {
     commitRoot();
   }
-
+  // 当前任务执行完通知浏览器在空闲时间执行下一个任务
   requestIdleCallback(workLoop);
 }
 
@@ -53,7 +53,13 @@ function commitWork(fiber) {
   if (!fiber) {
     return;
   }
-  fiber.parent.dom.appendChild(fiber.dom);
+  let fiberParent = fiber.parent;
+  while(!fiberParent.dom) {
+    fiberParent = fiberParent.parent;
+  }
+  if (fiber.dom) {
+    fiberParent.dom.appendChild(fiber.dom);
+  }
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
@@ -66,13 +72,18 @@ function createDom(type) {
 
 function updateProps(dom, props) {
   const isProperty = k => k !== 'children';
-    Object.keys(props).filter(isProperty).forEach(k => {
+  Object.keys(props).filter(isProperty).forEach(k => {
+    if (k.startsWith('on')) {
+      const eventType = k.toLowerCase().substring(2);
+      console.log(dom, eventType, props[k]); // click
+      dom.addEventListener(eventType, props[k]);
+    } else {
       dom[k] = props[k];
-    });
+    }
+  });
 }
 
-function initChildren(fiber) {
-  const children = fiber.props.children;
+function initChildren(fiber, children) {
   let prevChild = null;
   children.forEach((child, index) => {
     const newFiber = {
@@ -90,18 +101,32 @@ function initChildren(fiber) {
     }
     prevChild = newFiber;
   });
-} 
+}
 
-function performUnitOfWork(fiber) {
-  // 1. createDom
+function updateFunctionComponent(fiber) {
+  const children = [fiber.type(fiber.props)];
+  initChildren(fiber, children);
+}
+
+function updateHostComponent(fiber) {
   if (!fiber.dom) {
     const dom = (fiber.dom = createDom(fiber.type));
-    // 2. 处理 props
     updateProps(dom, fiber.props);
   }
-  
-  // 3. 转换链表
-  initChildren(fiber);
+
+  const children = fiber.props.children;
+  initChildren(fiber, children);
+}
+
+
+function performUnitOfWork(fiber) {
+  const isFunctionComponent = typeof fiber.type === 'function';
+
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
+  }
 
   // 4. 返回下一个任务
   if (fiber.child) {
@@ -111,8 +136,13 @@ function performUnitOfWork(fiber) {
   if (fiber.sibling) {
     return fiber.sibling;
   }
-
-  return fiber.parent?.sibling;
+  let nextFiber = fiber;
+  while(nextFiber) {
+    if (nextFiber.sibling) {
+      return nextFiber.sibling;
+    }
+    nextFiber = nextFiber.parent;
+  }
 }
 
 const React = {
