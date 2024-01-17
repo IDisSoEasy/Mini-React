@@ -18,18 +18,8 @@ function createElement(type, props, ...children) {
   }
 }
 
-function render(el, container) {
-  nextWorkOfUnit = {
-    dom: container,
-    props: {
-      children: [el]
-    }
-  }
-
-  root = nextWorkOfUnit;
-}
-
 let root = null;
+let currentRoot = null;
 let nextWorkOfUnit = null;
 function workLoop(deadline) {
   let shouldYield = false;
@@ -47,6 +37,8 @@ function workLoop(deadline) {
 
 function commitRoot() {
   commitWork(root.child);
+  currentRoot = root;
+  root = null;
 }
 
 function commitWork(fiber) {
@@ -57,9 +49,14 @@ function commitWork(fiber) {
   while(!fiberParent.dom) {
     fiberParent = fiberParent.parent;
   }
-  if (fiber.dom) {
-    fiberParent.dom.appendChild(fiber.dom);
+  if (fiber.effectTag === 'update') {
+    updateProps(fiber.dom, fiber.props, fiber.altermate?.props);
+  } else if (fiber.effectTag === 'placement') {
+    if (fiber.dom) {
+      fiberParent.dom.appendChild(fiber.dom);
+    }
   }
+  
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
@@ -70,30 +67,65 @@ function createDom(type) {
   return type === 'TEXT_ELEMENT' ? document.createTextNode('') : document.createElement(type);
 }
 
-function updateProps(dom, props) {
+function updateProps(dom, nextProps, prevProps = {}) {
   const isProperty = k => k !== 'children';
-  Object.keys(props).filter(isProperty).forEach(k => {
-    if (k.startsWith('on')) {
-      const eventType = k.toLowerCase().substring(2);
-      console.log(dom, eventType, props[k]); // click
-      dom.addEventListener(eventType, props[k]);
-    } else {
-      dom[k] = props[k];
+  // oldProps中有，newProps中没有，删除
+  Object.keys(prevProps).filter(isProperty).forEach(k => {
+    if (!(k in nextProps)) {
+      dom.removeAttribute(k);
     }
   });
+
+  Object.keys(nextProps).filter(isProperty).forEach(k => {
+    if (nextProps[k] !== prevProps[k]) {
+      if (k.startsWith('on')) {
+        const eventName = k.slice(2).toLowerCase();
+        dom.removeEventListener(eventName, prevProps[k]);
+        dom.addEventListener(eventName, nextProps[k]);
+      } else {
+        dom[k] = nextProps[k];
+      }
+    }
+  })
 }
 
 function initChildren(fiber, children) {
+  let oldFiber = fiber.altermate?.child;
   let prevChild = null;
   children.forEach((child, index) => {
-    const newFiber = {
-      type: child.type,
-      props: child.props,
-      child: null,
-      parent: fiber,
-      dom: null,
-      sibling: null
+    // 判断是否是同一个类型的节点
+    const isSameType = oldFiber && oldFiber.type === child.type;
+    // 如果为True，更新节点
+    let newFiber;
+    if (isSameType) {
+      newFiber = {
+        type: child.type,
+        props: child.props,
+        child: null,
+        parent: fiber,
+        dom: oldFiber.dom,  // 指向老的dom
+        sibling: null,
+        altermate: oldFiber,
+        effectTag: 'update'
+      }
+    } else {
+      newFiber = {
+        type: child.type,
+        props: child.props,
+        child: null,
+        parent: fiber,
+        dom: null,
+        sibling: null,
+        altermate: null,
+        effectTag: 'placement'
+      }
     }
+
+    // 重置链表指向
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling;
+    }
+    
     if (index === 0) {
       fiber.child = newFiber;
     } else {
@@ -122,13 +154,13 @@ function updateHostComponent(fiber) {
 function performUnitOfWork(fiber) {
   const isFunctionComponent = typeof fiber.type === 'function';
 
+  // 判断是否为函数组件
   if (isFunctionComponent) {
     updateFunctionComponent(fiber);
   } else {
     updateHostComponent(fiber);
   }
 
-  // 4. 返回下一个任务
   if (fiber.child) {
     return fiber.child;
   }
@@ -145,9 +177,31 @@ function performUnitOfWork(fiber) {
   }
 }
 
+function render(el, container) {
+  nextWorkOfUnit = {
+    dom: container,
+    props: {
+      children: [el]
+    }
+  }
+  root = nextWorkOfUnit;
+}
+
+// 更新
+function update() {
+  nextWorkOfUnit = {
+    dom: currentRoot.dom,
+    props: currentRoot.props,
+    altermate: currentRoot  // 保存上一次的fiber
+  }
+  
+  root = nextWorkOfUnit;
+}
+
 const React = {
   createElement,
-  render
+  render,
+  update
 }
 
 export default React;

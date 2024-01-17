@@ -1,12 +1,11 @@
 import React from "./core/React.js";
-// const App = <div>Hello Panghu</div>;
-
+let count = 10
 function Counter({ num }) {
-  console.log("Counter");
   function handleClick() {
-    console.log("click");
+    count++;
+    React.update();
   }
-  return <div>count: {num}
+  return <div>count: {count}
       <button onClick={handleClick}>click</button>
     </div>
   ;
@@ -20,12 +19,5 @@ function App() {
     </div>
   );
 }
-
-// const App = (
-//   <div>
-//     Hello Panghu
-//     <Counter></Counter>
-//   </div>
-// )
 
 export default App;
