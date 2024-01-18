@@ -18,7 +18,7 @@ function createElement(type, props, ...children) {
   }
 }
 
-let root = null;
+let wipRoot = null;
 let currentRoot = null;
 let nextWorkOfUnit = null;
 function workLoop(deadline) {
@@ -28,7 +28,7 @@ function workLoop(deadline) {
     shouldYield = deadline.timeRemaining() < 1;
   }
 
-  if (!nextWorkOfUnit && root) {
+  if (!nextWorkOfUnit && wipRoot) {
     commitRoot();
   }
   // 当前任务执行完通知浏览器在空闲时间执行下一个任务
@@ -36,9 +36,24 @@ function workLoop(deadline) {
 }
 
 function commitRoot() {
-  commitWork(root.child);
-  currentRoot = root;
-  root = null;
+  deletions.forEach(commitDeletion);
+  commitWork(wipRoot.child);
+  currentRoot = wipRoot;
+  wipRoot = null;
+  deletions = [];
+}
+
+function commitDeletion(fiber) {
+  if (fiber.dom) {
+    let fiberParent = fiber.parent;
+    // 特殊处理fc
+    while(!fiberParent.dom) {
+      fiberParent = fiberParent.parent;
+    }
+    fiberParent.dom.removeChild(fiber.dom);
+  } else {
+    commitDeletion(fiber.child);
+  }
 }
 
 function commitWork(fiber) {
@@ -88,8 +103,8 @@ function updateProps(dom, nextProps, prevProps = {}) {
     }
   })
 }
-
-function initChildren(fiber, children) {
+let deletions = []
+function reconcileChildren(fiber, children) {
   let oldFiber = fiber.altermate?.child;
   let prevChild = null;
   children.forEach((child, index) => {
@@ -109,15 +124,22 @@ function initChildren(fiber, children) {
         effectTag: 'update'
       }
     } else {
-      newFiber = {
-        type: child.type,
-        props: child.props,
-        child: null,
-        parent: fiber,
-        dom: null,
-        sibling: null,
-        altermate: null,
-        effectTag: 'placement'
+      if (child) {
+        newFiber = {
+          type: child.type,
+          props: child.props,
+          child: null,
+          parent: fiber,
+          dom: null,
+          sibling: null,
+          altermate: null,
+          effectTag: 'placement'
+        }
+      }
+
+      if (oldFiber) {
+        oldFiber.effectTag = 'delete';
+        deletions.push(oldFiber);
       }
     }
 
@@ -131,13 +153,20 @@ function initChildren(fiber, children) {
     } else {
       prevChild.sibling = newFiber;
     }
-    prevChild = newFiber;
+    if (newFiber) {
+      prevChild = newFiber;
+    }
   });
+  while(oldFiber) {
+    deletions.push(oldFiber);
+    oldFiber = oldFiber.sibling;
+  }
+  console.log(oldFiber);
 }
 
 function updateFunctionComponent(fiber) {
   const children = [fiber.type(fiber.props)];
-  initChildren(fiber, children);
+  reconcileChildren(fiber, children);
 }
 
 function updateHostComponent(fiber) {
@@ -147,7 +176,7 @@ function updateHostComponent(fiber) {
   }
 
   const children = fiber.props.children;
-  initChildren(fiber, children);
+  reconcileChildren(fiber, children);
 }
 
 
@@ -178,24 +207,24 @@ function performUnitOfWork(fiber) {
 }
 
 function render(el, container) {
-  nextWorkOfUnit = {
+  wipRoot = {
     dom: container,
     props: {
       children: [el]
     }
   }
-  root = nextWorkOfUnit;
+  nextWorkOfUnit = wipRoot;
 }
 
 // 更新
 function update() {
-  nextWorkOfUnit = {
+  wipRoot = {
     dom: currentRoot.dom,
     props: currentRoot.props,
     altermate: currentRoot  // 保存上一次的fiber
   }
   
-  root = nextWorkOfUnit;
+  nextWorkOfUnit = wipRoot;
 }
 
 const React = {

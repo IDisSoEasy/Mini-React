@@ -1,11 +1,21 @@
 import React from "./core/React.js";
-let count = 10
-function Counter({ num }) {
+let showBar = true;
+function Counter() {
   function handleClick() {
-    count++;
+    showBar = !showBar;
     React.update();
   }
-  return <div>count: {count}
+  const Vant = (<div>
+    <div>child1</div>
+    <div>child2</div>
+    <div>child3</div>
+  </div>)
+  const bar = <div>bar</div>;
+  function Foo() {
+    return <p>foo</p>;
+  }
+  return <div>count
+      <div>{ showBar ? Vant : bar }</div>
       <button onClick={handleClick}>click</button>
     </div>
   ;
